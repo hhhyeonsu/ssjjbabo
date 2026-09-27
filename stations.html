@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>구간별 관측지점 · WeatherWorks</title>
+<link rel="stylesheet" href="css/style.css">
+<style>
+  .search-bar-wrap { position: relative; margin-bottom: 16px; }
+  .search-input { width: 100%; height: 42px; padding: 0 16px 0 40px; border: 1.5px solid #cbd5e1; border-radius: 6px; font-size: 14px; background: #fff; box-sizing: border-box; }
+  .search-input:focus { border-color: var(--primary, #2563eb); outline: none; box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
+  .search-icon { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: #94a3b8; font-size: 16px; }
+  
+  .table-scroll-area { max-height: 560px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 6px; }
+  .pagination-bar { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-top: 1px solid #e2e8f0; background: #f8fafc; font-size: 12.5px; color: #64748b; }
+</style>
+</head>
+<body>
+<div id="app-shell">
+  <!-- 사이드바 -->
+  <aside id="sidebar"></aside>
+
+  <div class="main">
+    <!-- 상단바 -->
+    <header id="topbar"></header>
+
+    <main id="page-content">
+      <div class="page-head">
+        <h2>공사 구간별 관측지점 매핑</h2>
+        <div class="desc">전국 4,418개 행정구역(읍·면·동) 기반 최인접 기상관측소 매핑 정보 및 직선거리를 조회합니다.</div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head row space-between items-center">
+          <h3>기상관측소 매핑 현황</h3>
+          <span class="muted" style="font-size:12.5px;" id="lbl-total-count">데이터 로딩 중...</span>
+        </div>
+
+        <div class="search-bar-wrap">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="inp-search" class="search-input" placeholder="현장 주소(시·군·구, 읍·면·동) 또는 관측지점명 검색... (예: 덕명동, 배방읍, 계룡, 강릉)" oninput="handleSearch(this.value)">
+        </div>
+
+        <div class="table-scroll-area">
+          <table class="table">
+            <thead>
+              <tr>
+                <th style="width: 260px;">현장 위치 (행정구역 주소)</th>
+                <th class="num" style="width: 100px;">매핑 지점코드</th>
+                <th style="width: 130px;">매핑 관측지점명</th>
+                <th>관측소 실제 주소</th>
+                <th class="num" style="width: 110px;">직선거리(km)</th>
+                <th style="width: 120px; text-align: center;">데이터 신뢰도</th>
+              </tr>
+            </thead>
+            <tbody id="tbl-stations-body">
+              <tr>
+                <td colspan="6" style="text-align: center; padding: 40px; color: #94a3b8;">
+                  관측지점 데이터를 불러오는 중입니다...
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="pagination-bar">
+          <span id="txt-page-info">표시 중: 0 / 0</span>
+          <div class="row gap-8">
+            <button class="btn btn-sm" id="btn-prev" onclick="changePage(-1)" disabled>&larr; 이전</button>
+            <button class="btn btn-sm" id="btn-next" onclick="changePage(1)" disabled>다음 &rarr;</button>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script src="js/db.js"></script>
+<script src="js/seed.js"></script>
+<!-- 전국 4,418개 관측지점 데이터 -->
+<script src="js/stations-data.js"></script>
+<script src="js/util.js"></script>
+<script src="js/calc.js"></script>
+<script src="js/nav.js"></script>
+<script>
+let RAW_STATIONS_MAP = [];
+let FILTERED_STATIONS = [];
+let currentPage = 1;
+const PAGE_SIZE = 50;
+
+document.addEventListener('DOMContentLoaded', () => {
+  if (typeof renderSidebar === 'function') renderSidebar();
+  if (typeof renderTopbar === 'function') renderTopbar('구간별 관측지점');
+
+  loadStationMappingData();
+});
+
+function loadStationMappingData() {
+  // stations-data.js 의 실제 선언 변수 stationMappingData 직접 바인딩
+  let source = null;
+  if (typeof stationMappingData !== 'undefined') {
+    source = stationMappingData;
+  } else if (typeof STATIONS_DATA !== 'undefined') {
+    source = STATIONS_DATA;
+  } else if (typeof stationsData !== 'undefined') {
+    source = stationsData;
+  }
+
+  if (source && Array.isArray(source)) {
+    RAW_STATIONS_MAP = source.map(item => ({
+      address: item.address || item.addr || item.전체주소명 || '-',
+      code: item.code || item.매핑지점코드 || '-',
+      stationName: item.stationName || item.station || item.매핑지점명 || '-',
+      stationAddr: item.stationAddr || item.관측소주소 || ((item.stationName || item.station || item.매핑지점명 || '') + ' 관측소 관할 구역'),
+      dist: parseFloat(item.dist || item['직선거리(km)'] || 0)
+    }));
+  }
+
+  FILTERED_STATIONS = [...RAW_STATIONS_MAP];
+  document.getElementById('lbl-total-count').textContent = `총 ${RAW_STATIONS_MAP.length.toLocaleString()}개 구간 매핑됨`;
+  renderPage(1);
+}
+
+function handleSearch(keyword) {
+  const kw = keyword.trim().toLowerCase();
+  if (!kw) {
+    FILTERED_STATIONS = [...RAW_STATIONS_MAP];
+  } else {
+    FILTERED_STATIONS = RAW_STATIONS_MAP.filter(item => 
+      item.address.toLowerCase().includes(kw) ||
+      item.stationName.toLowerCase().includes(kw) ||
+      item.stationAddr.toLowerCase().includes(kw) ||
+      String(item.code).includes(kw)
+    );
+  }
+  currentPage = 1;
+  renderPage(1);
+}
+
+function renderPage(page) {
+  currentPage = page;
+  const tbody = document.getElementById('tbl-stations-body');
+  const total = FILTERED_STATIONS.length;
+  const totalPages = Math.ceil(total / PAGE_SIZE) || 1;
+
+  if (total === 0) {
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; padding: 40px; color: #94a3b8;">검색 결과가 없습니다.</td></tr>`;
+    document.getElementById('txt-page-info').textContent = '표시 중: 0 / 0';
+    document.getElementById('btn-prev').disabled = true;
+    document.getElementById('btn-next').disabled = true;
+    return;
+  }
+
+  const startIdx = (page - 1) * PAGE_SIZE;
+  const endIdx = Math.min(startIdx + PAGE_SIZE, total);
+  const pageItems = FILTERED_STATIONS.slice(startIdx, endIdx);
+
+  tbody.innerHTML = pageItems.map(item => {
+    let badgeHtml = '';
+    if (item.dist <= 5.0) {
+      badgeHtml = '<span class="badge" style="background:#ecfdf5; color:#16a34a; font-weight:700;">최상 (&le;5km)</span>';
+    } else if (item.dist <= 10.0) {
+      badgeHtml = '<span class="badge" style="background:#eff6ff; color:#2563eb; font-weight:600;">높음 (&le;10km)</span>';
+    } else {
+      badgeHtml = '<span class="badge" style="background:#fff7ed; color:#ea580c;">보통 (>10km)</span>';
+    }
+
+    return `
+      <tr>
+        <td><strong>${item.address}</strong></td>
+        <td class="num mono" style="color: #64748b;">${item.code}</td>
+        <td><strong style="color: var(--primary, #2563eb);">${item.stationName}</strong></td>
+        <td class="muted" style="font-size: 12.5px;">${item.stationAddr}</td>
+        <td class="num mono font-bold">${item.dist.toFixed(2)} km</td>
+        <td style="text-align: center;">${badgeHtml}</td>
+      </tr>
+    `;
+  }).join('');
+
+  document.getElementById('txt-page-info').textContent = `표시 중: ${startIdx + 1} - ${endIdx} / 전체 ${total.toLocaleString()}개`;
+  document.getElementById('btn-prev').disabled = (page <= 1);
+  document.getElementById('btn-next').disabled = (page >= totalPages);
+}
+
+function changePage(delta) {
+  const totalPages = Math.ceil(FILTERED_STATIONS.length / PAGE_SIZE) || 1;
+  const newPage = currentPage + delta;
+  if (newPage >= 1 && newPage <= totalPages) {
+    renderPage(newPage);
+  }
+}
+</script>
+</body>
+</html>

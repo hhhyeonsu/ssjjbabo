@@ -1,0 +1,658 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>기상데이터 품질관리 및 비작업일수 · WeatherWorks</title>
+<link rel="stylesheet" href="css/style.css">
+<style>
+  /* 캘린더 전용 스타일 */
+  .cal-filter-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    gap: 16px;
+    margin-bottom: 20px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--line, #e2e8f0);
+  }
+  .filter-controls {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .filter-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .filter-item label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--muted, #64748b);
+  }
+  .filter-item select {
+    padding: 6px 12px;
+    border: 1px solid var(--line, #cbd5e1);
+    border-radius: 6px;
+    font-size: 13px;
+    background: #fff;
+    color: #1e293b;
+    outline: none;
+  }
+  .cal-legend {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    font-size: 12px;
+    color: #475569;
+  }
+  .legend-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 4px;
+  }
+  .legend-dot.ok { background-color: #10b981; }
+  .legend-dot.bad { background-color: #ef4444; }
+  .legend-dot.none { background-color: #cbd5e1; }
+
+  /* 4대 요약 카드 */
+  .cal-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  .cal-card {
+    background: #fff;
+    border: 1px solid var(--line, #e2e8f0);
+    border-radius: 8px;
+    padding: 16px 20px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+  }
+  .cal-card .card-tit {
+    font-size: 12px;
+    color: #64748b;
+    font-weight: 500;
+    margin-bottom: 8px;
+  }
+  .cal-card .card-val {
+    font-size: 24px;
+    font-weight: 700;
+    margin-bottom: 4px;
+  }
+  .cal-card .card-desc {
+    font-size: 11px;
+    color: #94a3b8;
+  }
+
+  /* 달력 본체 그리드 */
+  .cal-box {
+    background: #fff;
+    border: 1px solid var(--line, #e2e8f0);
+    border-radius: 8px;
+    padding: 20px;
+  }
+  .cal-header-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: #0f172a;
+    margin-bottom: 16px;
+  }
+  .cal-weekday-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 8px;
+    text-align: center;
+    font-size: 12px;
+    font-weight: 600;
+    color: #64748b;
+    margin-bottom: 10px;
+  }
+  .cal-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 8px;
+  }
+  .cal-cell {
+    background: #f8fafc;
+    border: 1px solid var(--line, #e2e8f0);
+    border-radius: 8px;
+    padding: 10px;
+    min-height: 118px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    transition: all 0.15s ease;
+  }
+  .cal-cell.empty {
+    background: transparent;
+    border: 1px dashed transparent;
+  }
+  .cal-cell:not(.empty):hover {
+    border-color: #cbd5e1;
+    background: #fff;
+  }
+  .cell-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+  }
+  .cell-num {
+    font-size: 14px;
+    font-weight: 700;
+    color: #1e293b;
+  }
+  .cell-num.sun, .cell-num.sat { color: #dc2626; }
+  .cell-badge {
+    font-size: 10px;
+    color: #64748b;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    padding: 1px 5px;
+    background: #fff;
+  }
+  .cell-weather-info {
+    font-size: 11px;
+    color: #475569;
+    margin-top: 6px;
+    line-height: 1.45;
+  }
+  .cell-nowork-tag {
+    color: #dc2626;
+    font-weight: 700;
+    font-size: 11px;
+    margin-top: 4px;
+  }
+  .no-data-text {
+    font-size: 11px;
+    color: #94a3b8;
+    margin-top: 14px;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+<div id="app-shell">
+  <!-- 사이드바 (nav.js 원본 주입) -->
+  <aside id="sidebar"></aside>
+
+  <div class="main">
+    <!-- 상단바 (nav.js 원본 주입) -->
+    <header id="topbar"></header>
+
+    <main id="page-content">
+      <div class="page-head">
+        <h2>기상데이터 품질관리 및 비작업일수 현황</h2>
+        <div class="desc">수집 데이터 이상치 검정 및 Admin 기상 비작업 기준(강우·강풍·폭염)에 따른 캘린더 분석입니다.</div>
+      </div>
+
+      <!-- 캘린더 패널 -->
+      <div class="panel">
+        <div class="cal-filter-bar">
+          <div class="filter-controls">
+            <div class="filter-item">
+              <label>현장</label>
+              <select id="sel-site">
+                <option value="OO지구 공동주택 신축공사" selected>OO지구 공동주택 신축공사</option>
+                <option value="도로공사">도로공사</option>
+              </select>
+            </div>
+            <div class="filter-item">
+              <label>공종</label>
+              <select id="sel-work">
+                <option value="골조공사 (철근콘크리트 타설)" selected>골조공사 (철근콘크리트 타설)</option>
+                <option value="토공사 터파기 및 흙막이(CIP)">토공사 터파기 및 흙막이(CIP)</option>
+                <option value="부지 정지 및 가설 펜스 설치">부지 정지 및 가설 펜스 설치</option>
+                <option value="지상층 골조공사">지상층 골조공사</option>
+              </select>
+            </div>
+            <div class="filter-item">
+              <label>연 / 월</label>
+              <div style="display: flex; gap: 6px;">
+                <select id="sel-year">
+                  <option value="2026" selected>2026년</option>
+                </select>
+                <select id="sel-month">
+                  <option value="9" selected>9월</option>
+                  <option value="8">8월</option>
+                </select>
+              </div>
+            </div>
+          </div>
+          <div class="cal-legend">
+            <span><span class="legend-dot ok"></span>작업 가능</span>
+            <span><span class="legend-dot bad"></span>작업 불가능</span>
+            <span><span class="legend-dot none"></span>데이터 미수집</span>
+          </div>
+        </div>
+
+        <!-- 4대 요약 지표 카드 -->
+        <div class="cal-summary-grid">
+          <div class="cal-card">
+            <div class="card-tit">수집 완료 일수</div>
+            <div class="card-val" style="color: #059669;" id="stat-collected-days">0<span style="font-size: 14px; font-weight: normal; color: #64748b;">일</span></div>
+            <div class="card-desc" id="stat-collected-desc">실제 기상데이터 수집 완료</div>
+          </div>
+          <div class="cal-card">
+            <div class="card-tit">실측 비작업일수 (Admin 기준)</div>
+            <div class="card-val" style="color: #dc2626;" id="stat-nowork-days">0.0<span style="font-size: 14px; font-weight: normal; color: #64748b;">일</span></div>
+            <div class="card-desc" id="stat-nowork-hours">비작업 0h 누적</div>
+          </div>
+          <div class="cal-card">
+            <div class="card-tit">기상 영향 시간</div>
+            <div class="card-val" style="color: #0f172a;" id="stat-impact-hours">0<span style="font-size: 14px; font-weight: normal; color: #64748b;"> 시간</span></div>
+            <div class="card-desc" id="stat-impact-days">작업불가 0일</div>
+          </div>
+          <div class="cal-card">
+            <div class="card-tit">실측 누적 시간대</div>
+            <div class="card-val" style="color: #0f172a;" id="stat-total-records">0<span style="font-size: 14px; font-weight: normal; color: #64748b;"> 건</span></div>
+            <div class="card-desc">07~17시 근무구간 검증</div>
+          </div>
+        </div>
+
+        <!-- 달력 본체 -->
+        <div class="cal-box">
+          <div class="cal-header-title" id="calTitleDisplay">2026년 9월 · OO지구 공동주택 신축공사 · 골조공사 (철근콘크리트 타설)</div>
+          <div class="cal-weekday-grid">
+            <div style="color:#dc2626;">일</div>
+            <div>월</div>
+            <div>화</div>
+            <div>수</div>
+            <div>목</div>
+            <div>금</div>
+            <div style="color:#dc2626;">토</div>
+          </div>
+          <div class="cal-grid" id="calendarGrid"></div>
+        </div>
+      </div>
+
+      <!-- 시간별 상태 요약 패널 -->
+      <div class="panel">
+        <div class="panel-head row space-between">
+          <h3>시간별 상태 요약</h3>
+          <span class="muted" style="font-size: 12px;" id="rateSummary">수집률 74.9% · 총 960개 시간대</span>
+        </div>
+        <div style="height: 12px; background: var(--line, #e2e8f0); border-radius: 6px; overflow: hidden; display: flex; margin-bottom: 8px;">
+          <div id="barNormal" style="background: #10b981; width: 74.9%; height: 100%;"></div>
+          <div id="barCaution" style="background: #f59e0b; width: 0%; height: 100%;"></div>
+          <div id="barError" style="background: #ef4444; width: 25.1%; height: 100%;"></div>
+        </div>
+        <div id="countsSummary" class="muted" style="font-size: 12px; text-align: right;">
+          기온 11건 · 습도 11건 · 강수량 8건 · 풍속 13건
+        </div>
+      </div>
+
+      <!-- 기상데이터 품질관리 내역 패널 (실측 최신순 가로 1행) -->
+      <div class="panel">
+        <div class="panel-head row space-between">
+          <h3>기상데이터 품질관리 내역 (실측 최신순)</h3>
+        </div>
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>측정일시</th>
+                <th>기온</th>
+                <th>습도</th>
+                <th>강수량</th>
+                <th>풍속</th>
+                <th>판정</th>
+                <th>판정 이유</th>
+              </tr>
+            </thead>
+            <tbody id="qualityTableBody">
+              <tr>
+                <td colspan="7" style="text-align: center; padding: 30px;" class="muted">데이터를 불러오는 중입니다...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script src="js/db.js"></script>
+<script src="js/seed.js"></script>
+<script src="js/util.js"></script>
+<script src="js/calc.js"></script>
+<script src="js/nav.js"></script>
+<script>
+// 날짜 및 시간 정밀 추출 함수 (두 자리 일자/시간 우선 파싱 버그 수정)
+function parseRecordDateTime(rec) {
+  if (!rec) return null;
+  let str = rec.tm || rec.time || rec.datetime || rec.date || rec.timestamp || rec.dt;
+  if (!str || typeof str !== 'string') {
+    for (const k of Object.keys(rec)) {
+      if (typeof rec[k] === 'string' && /202[0-9]/.test(rec[k])) {
+        str = rec[k];
+        break;
+      }
+    }
+  }
+  if (!str || typeof str !== 'string') return null;
+
+  // 두 자리 일자(10~31)가 한 자리 일자(1~3)로 조기 매칭되지 않도록 greedy \d{1,2} 적용
+  const m = str.match(/(20\d{2})[-/.년\s]+(\d{1,2})[-/.월\s]+(\d{1,2})(?:[T\s]+(\d{1,2})(?::(\d{2}))?)?/);
+  if (!m) return null;
+
+  const year = parseInt(m[1], 10);
+  const month = parseInt(m[2], 10);
+  const day = parseInt(m[3], 10);
+  const hour = m[4] !== undefined ? parseInt(m[4], 10) : 12;
+
+  return {
+    fullStr: str,
+    year: year,
+    month: month,
+    day: day,
+    hour: hour,
+    dateKey: `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+  };
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+  if (typeof renderSidebar === 'function') renderSidebar();
+  if (typeof renderTopbar === 'function') renderTopbar('기상데이터 품질관리', { showProjectSelect: true });
+
+  let allRecords = [];
+
+  try {
+    const res = await fetch('data/quality-data.json');
+    if (!res.ok) throw new Error('파일을 불러올 수 없습니다.');
+    const rawJson = await res.json();
+
+    if (Array.isArray(rawJson)) allRecords = rawJson;
+    else if (rawJson.records && Array.isArray(rawJson.records)) allRecords = rawJson.records;
+    else if (rawJson.data && Array.isArray(rawJson.data)) allRecords = rawJson.data;
+
+    // 1. 하단 최신 데이터 테이블 렌더링
+    renderTable(allRecords);
+
+    // 2. 상단 캘린더 초기 렌더링 (기본 2026년 9월)
+    buildCalendar(2026, 9, allRecords);
+
+    const updateHandler = () => {
+      const year = parseInt(document.getElementById('sel-year').value);
+      const month = parseInt(document.getElementById('sel-month').value);
+      buildCalendar(year, month, allRecords);
+    };
+
+    document.getElementById('sel-site').addEventListener('change', updateHandler);
+    document.getElementById('sel-work').addEventListener('change', updateHandler);
+    document.getElementById('sel-month').addEventListener('change', updateHandler);
+
+  } catch (err) {
+    console.error(err);
+    document.getElementById('qualityTableBody').innerHTML = `
+      <tr><td colspan="7" style="text-align:center; color:#ef4444; padding:30px;">데이터 로드 오류: ${err.message}</td></tr>
+    `;
+  }
+});
+
+function renderTable(records) {
+  const tbody = document.getElementById('qualityTableBody');
+  if (!records || records.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:30px;" class="muted">수집된 데이터가 없습니다.</td></tr>';
+    return;
+  }
+
+  const reversed = [...records].reverse();
+  const rowsHtml = reversed.map(rec => {
+    const p = parseRecordDateTime(rec);
+    const timeStr = p ? p.fullStr : '-';
+
+    const tempVal = rec.feelsLike !== undefined ? `${rec.feelsLike} °C` : (rec.temp !== undefined ? `${rec.temp} °C` : '-');
+    const humidityVal = rec.humidity !== undefined ? `${rec.humidity} %` : '-';
+    const rainVal = rec.rain1h !== undefined ? `${rec.rain1h} mm` : (rec.rain !== undefined ? `${rec.rain} mm` : '-');
+    const windVal = rec.wind !== undefined ? `${rec.wind} m/s` : '-';
+
+    const status = rec.status || '정상';
+    const reason = rec.reason || '10년 같은 월 기준 범위 내';
+
+    const badgeStyle = status === '정상' 
+      ? 'background:#dcfce7; color:#15803d;' 
+      : (status === '주의' ? 'background:#fef9c3; color:#a16207;' : 'background:#fee2e2; color:#b91c1c;');
+
+    return `
+      <tr>
+        <td class="mono">${timeStr}</td>
+        <td class="num mono"><strong>${tempVal}</strong></td>
+        <td class="num mono">${humidityVal}</td>
+        <td class="num mono">${rainVal}</td>
+        <td class="num mono">${windVal}</td>
+        <td><span class="badge" style="${badgeStyle}">${status}</span></td>
+        <td class="muted">${reason}</td>
+      </tr>
+    `;
+  });
+
+  tbody.innerHTML = rowsHtml.slice(0, 100).join('');
+}
+
+// Admin 원본 판정 기준에 따른 캘린더 생성 함수
+function buildCalendar(year, month, records) {
+  const grid = document.getElementById('calendarGrid');
+  grid.innerHTML = '';
+
+  const siteSelect = document.getElementById('sel-site');
+  const siteName = siteSelect.options[siteSelect.selectedIndex].text;
+  const workSelect = document.getElementById('sel-work');
+  const workName = workSelect.options[workSelect.selectedIndex].text;
+  document.getElementById('calTitleDisplay').textContent = `${year}년 ${month}월 · ${siteName} · ${workName}`;
+
+  // 1. 해당 연/월의 실측치를 일자별 시간대 배열로 그룹화
+  const daysMap = {};
+  let totalMonthRecords = 0;
+
+  records.forEach(rec => {
+    const p = parseRecordDateTime(rec);
+    if (!p) return;
+    if (p.year !== year || p.month !== month) return;
+
+    totalMonthRecords++;
+    const dateKey = p.dateKey;
+
+    if (!daysMap[dateKey]) {
+      daysMap[dateKey] = [];
+    }
+
+    const t = rec.feelsLike !== undefined ? Number(rec.feelsLike) : (rec.temp !== undefined ? Number(rec.temp) : 0);
+    const r = rec.rain1h !== undefined ? Number(rec.rain1h) : (rec.rain !== undefined ? Number(rec.rain) : 0);
+    const w = rec.wind !== undefined ? Number(rec.wind) : 0;
+
+    daysMap[dateKey].push({
+      hour: p.hour,
+      temp: t,
+      rain: isNaN(r) ? 0 : r,
+      wind: isNaN(w) ? 0 : w,
+      raw: rec
+    });
+  });
+
+  // 2. Admin 공식 판정 기준 적용 (오전/오후 독립 판정)
+  const dayEvaluations = {};
+
+  Object.keys(daysMap).forEach(dateKey => {
+    const hourList = daysMap[dateKey].sort((a, b) => a.hour - b.hour);
+
+    let maxTemp = -999;
+    let minTemp = 999;
+    let totalRain = 0;
+    let maxWind = 0;
+
+    hourList.forEach(item => {
+      if (item.temp > maxTemp) maxTemp = item.temp;
+      if (item.temp < minTemp) minTemp = item.temp;
+      totalRain += item.rain;
+      if (item.wind > maxWind) maxWind = item.wind;
+    });
+
+    // 주간 기준 근무시간 (07:00 ~ 17:00) 필터링
+    const morningHours = hourList.filter(item => item.hour >= 7 && item.hour <= 12);
+    const afternoonHours = hourList.filter(item => item.hour >= 13 && item.hour <= 17);
+
+    // [Admin 기준 1] 지속성 강우: 오전 또는 오후 각각 2시간 연속 시간당 강수량 1.0mm 이상 발생 시 반일 오프
+    const checkConsecutiveRain = (list) => {
+      let streak = 0;
+      for (const h of list) {
+        if (h.rain >= 1.0) {
+          streak++;
+          if (streak >= 2) return true;
+        } else {
+          streak = 0;
+        }
+      }
+      return false;
+    };
+
+    const morningRainStop = checkConsecutiveRain(morningHours);
+    const afternoonRainStop = checkConsecutiveRain(afternoonHours);
+
+    // [Admin 기준 2] 강풍: 근무시간 중 풍속 15.0m/s 이상 시 해당 반일 작업 중지
+    const morningWindStop = morningHours.some(h => h.wind >= 15.0);
+    const afternoonWindStop = afternoonHours.some(h => h.wind >= 15.0);
+
+    // [Admin 기준 3] 혹서기(폭염)
+    const heatHeavyStop = maxTemp >= 38.0; // 38℃ 이상 당일 전일 작업 중지
+    const heatLightStop = maxTemp >= 35.0; // 35℃ 이상 14시~17시 작업 중지 (오후 반일)
+
+    // [Admin 기준 4] 혹한기(한파)
+    const coldStop = minTemp <= -12.0;     // -12℃ 이하 당일 전일 작업 중지
+
+    // 오전/오후 반일 중지 여부 결합
+    const morningStop = morningRainStop || morningWindStop;
+    const afternoonStop = afternoonRainStop || afternoonWindStop || heatLightStop;
+    const fullDayStop = heatHeavyStop || coldStop || (morningStop && afternoonStop);
+
+    let badHours = 0;
+    let badDays = 0;
+    let reasonList = [];
+
+    if (fullDayStop) {
+      badHours = 8;
+      badDays = 1.0;
+      if (heatHeavyStop) reasonList.push('폭염(38℃↑)');
+      if (coldStop) reasonList.push('한파(-12℃↓)');
+      if (morningStop && afternoonStop) reasonList.push('오전·오후 지속강우/강풍');
+    } else if (morningStop || afternoonStop) {
+      badHours = 4;
+      badDays = 0.5;
+      if (morningRainStop) reasonList.push('오전 지속강우');
+      if (afternoonRainStop) reasonList.push('오후 지속강우');
+      if (morningWindStop || afternoonWindStop) reasonList.push('강풍(15m/s↑)');
+      if (heatLightStop) reasonList.push('폭염(35℃↑)');
+    }
+
+    dayEvaluations[dateKey] = {
+      maxTemp: maxTemp > -900 ? maxTemp.toFixed(1) : '-',
+      totalRain: totalRain.toFixed(1),
+      maxWind: maxWind.toFixed(1),
+      badHours: badHours,
+      badDays: badDays,
+      reasons: reasonList.join(', ')
+    };
+  });
+
+  // 3. 달력 그리드 렌더링
+  const firstDay = new Date(year, month - 1, 1).getDay();
+  const lastDate = new Date(year, month, 0).getDate();
+
+  for (let i = 0; i < firstDay; i++) {
+    const emptyCell = document.createElement('div');
+    emptyCell.className = 'cal-cell empty';
+    grid.appendChild(emptyCell);
+  }
+
+  const collectedDaysCount = Object.keys(dayEvaluations).length;
+  let totalBadHours = 0;
+  let totalBadDaysCount = 0;
+
+  for (let d = 1; d <= lastDate; d++) {
+    const dayDate = new Date(year, month - 1, d);
+    const dayOfWeek = dayDate.getDay();
+    const dateKey = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+
+    const evalData = dayEvaluations[dateKey];
+    const hasData = !!evalData;
+
+    const cell = document.createElement('div');
+    cell.className = 'cal-cell';
+
+    let weekendBadge = '';
+    let numClass = '';
+    if (dayOfWeek === 0) {
+      numClass = 'sun';
+      weekendBadge = `<div style="text-align:right;"><span class="cell-badge">휴무</span><div style="font-size:10px; color:#dc2626; margin-top:2px;">일요일</div></div>`;
+    } else if (dayOfWeek === 6) {
+      numClass = 'sat';
+      weekendBadge = `<div style="text-align:right;"><span class="cell-badge">휴무</span><div style="font-size:10px; color:#dc2626; margin-top:2px;">토요일</div></div>`;
+    }
+
+    let weatherHtml = '';
+    let dotHtml = '<span class="legend-dot none"></span>';
+
+    if (hasData) {
+      const isBadDay = evalData.badHours > 0;
+      if (isBadDay) {
+        totalBadHours += evalData.badHours;
+        totalBadDaysCount++;
+        dotHtml = '<span class="legend-dot bad"></span>';
+      } else {
+        dotHtml = '<span class="legend-dot ok"></span>';
+      }
+
+      let badDaysText = evalData.badDays === 1 ? '1일' : '0.5일';
+      const noworkTag = isBadDay 
+        ? `<div class="cell-nowork-tag">비작업 ${evalData.badHours}h (${badDaysText})</div>` 
+        : '';
+
+      weatherHtml = `
+        <div class="cell-weather-info">
+          <div>최고 ${evalData.maxTemp}°C</div>
+          <div>강수 ${evalData.totalRain}mm</div>
+          <div>풍속 ${evalData.maxWind}m/s</div>
+        </div>
+        ${noworkTag}
+      `;
+    } else {
+      weatherHtml = `<div class="no-data-text">-<br><span style="font-size:10px;">미수집</span></div>`;
+    }
+
+    cell.innerHTML = `
+      <div class="cell-head">
+        <div class="cell-num ${numClass}">${d}</div>
+        <div style="display:flex; align-items:center; gap:6px;">
+          ${weekendBadge}
+          ${dotHtml}
+        </div>
+      </div>
+      <div>
+        ${weatherHtml}
+      </div>
+    `;
+
+    grid.appendChild(cell);
+  }
+
+  // 4. 상단 4대 요약 카드 수치 갱신
+  document.getElementById('stat-collected-days').innerHTML = `${collectedDaysCount}<span style="font-size: 14px; font-weight: normal; color: #64748b;">일</span>`;
+  document.getElementById('stat-collected-desc').textContent = `총 ${lastDate}일 중 ${collectedDaysCount}일 실측 완료`;
+
+  const totalBadDays = (totalBadHours / 8).toFixed(1);
+  document.getElementById('stat-nowork-days').innerHTML = `${totalBadDays}<span style="font-size: 14px; font-weight: normal; color: #64748b;">일</span>`;
+  document.getElementById('stat-nowork-hours').textContent = `Admin 판정 비작업 ${totalBadHours}h 누적`;
+
+  document.getElementById('stat-impact-hours').innerHTML = `${totalBadHours}<span style="font-size: 14px; font-weight: normal; color: #64748b;"> 시간</span>`;
+  document.getElementById('stat-impact-days').textContent = `비작업 발생 ${totalBadDaysCount}일`;
+
+  document.getElementById('stat-total-records').innerHTML = `${totalMonthRecords}<span style="font-size: 14px; font-weight: normal; color: #64748b;"> 건</span>`;
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,404 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Admin · 공종·기준·표준작업량 - WeatherWorks</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app-shell">
+  <aside id="sidebar"></aside>
+  <div class="main">
+    <header id="topbar"></header>
+    <main id="page-content">
+      <div class="page-head">
+        <h2>공사기간 산정근거 검토</h2>
+        <div class="desc">기상청 시간대별 관측 데이터(10개년) 분석 기반의 기상 비작업일 산정 기준 및 판정 조건을 확인합니다.</div>
+      </div>
+
+      <!-- 기상 조건별 작업불능 상세 판정 기준 카드 -->
+      <div class="panel">
+        <div class="panel-head">
+          <h3>기상 조건별 작업불능 상세 판정 기준 (코랩 정밀 분석 모델)</h3>
+        </div>
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th style="width: 16%;">구분</th>
+                <th style="width: 44%;">작업 불능 및 중지 판정 조건</th>
+                <th style="width: 20%;">적용 손실 시간</th>
+                <th style="width: 20%;">비고</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>기준 근무 시간</strong></td>
+                <td>주간 07:00 ~ 17:00 (1일 총 10시간 가동 구간 대상 분석)</td>
+                <td>-</td>
+                <td class="muted">야간 시간대 제외</td>
+              </tr>
+              <tr>
+                <td><strong>지속성 강우</strong></td>
+                <td>근무시간 중 <strong>2시간 연속 시간당 강수량 1.0mm 이상</strong> 발생 시</td>
+                <td>오전(07~12시) 또는 오후(13~17시) <strong>반일 오프</strong></td>
+                <td class="muted">현장 토공·골조 중지</td>
+              </tr>
+              <tr>
+                <td><strong>강풍</strong></td>
+                <td>근무시간 중 순간/시간 풍속 <strong>15.0m/s 이상</strong> 발생 시</td>
+                <td>해당 <strong>반일(오전/오후) 작업 중지</strong></td>
+                <td class="muted">크레인·고소작업 제한</td>
+              </tr>
+              <tr>
+                <td><strong>혹서기 (폭염)</strong></td>
+                <td>
+                  • 일 최고 체감온도(Tw) <strong>35.0°C 이상</strong>: 14시~17시 중지 (경량 손실)<br>
+                  • 일 최고 체감온도(Tw) <strong>38.0°C 이상</strong>: 당일 전일 작업 중지 (중증 손실)
+                </td>
+                <td>3~4시간 또는 전일 중지</td>
+                <td class="muted">여름철 습구체감온도 공식 적용</td>
+              </tr>
+              <tr>
+                <td><strong>혹한기 (한파)</strong></td>
+                <td>당일 일 최저기온 <strong>-12.0°C 이하</strong> 발생 시</td>
+                <td>당일 <strong>전일 작업 중지</strong></td>
+                <td class="muted">콘크리트 동결·토공 중지</td>
+              </tr>
+              <tr>
+                <td><strong>폭설 (적설)</strong></td>
+                <td>당일 일 최고 적설량 <strong>5.0cm 이상</strong> 관측 시</td>
+                <td>당일 <strong>전일 작업 중지</strong></td>
+                <td class="muted">제설 및 진입로 차단</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 10개년(2026~2035년) 공휴일 관리 패널 -->
+      <div class="panel" style="margin-top: 24px;">
+        <div class="panel-head row space-between items-center">
+          <div>
+            <h3>공휴일 관리 (10개년 2026~2035년)</h3>
+            <span class="muted" style="font-size: 12px;" id="holiday-count">총 191일 등록됨</span>
+          </div>
+          <div class="row gap-8 items-center">
+            <select id="sel-holiday-year" style="padding: 4px 10px; font-size: 12.5px; border: 1px solid var(--border-strong); border-radius: 4px; background: #fff;" onchange="filterHolidayYear(this.value)">
+              <option value="all" selected>전체 연도 (10개년)</option>
+              <option value="2026">2026년</option>
+              <option value="2027">2027년</option>
+              <option value="2028">2028년</option>
+              <option value="2029">2029년</option>
+              <option value="2030">2030년</option>
+              <option value="2031">2031년</option>
+              <option value="2032">2032년</option>
+              <option value="2033">2033년</option>
+              <option value="2034">2034년</option>
+              <option value="2035">2035년</option>
+            </select>
+            <button class="btn btn-sm btn-primary" id="btn-add-holiday">+ 공휴일 추가</button>
+          </div>
+        </div>
+        <div class="table-wrap" style="max-height: 540px; overflow-y: auto;">
+          <table class="table">
+            <thead>
+              <tr>
+                <th style="width: 140px;">날짜</th>
+                <th style="width: 180px;">명칭</th>
+                <th style="width: 130px;">구분</th>
+                <th>비고 (대체사유 / 기념일)</th>
+                <th style="width: 80px; text-align: center;">관리</th>
+              </tr>
+            </thead>
+            <tbody id="tbl-holidays"></tbody>
+          </table>
+        </div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<script src="js/db.js"></script>
+<script src="js/seed.js"></script>
+<script src="js/util.js"></script>
+<script src="js/calc.js"></script>
+<script src="js/sw-catalog.js"></script>
+<script src="js/nav.js"></script>
+<script>
+// 공휴일현황.xlsx 10개년(2026~2035년, 총 191일) 마스터 데이터
+const HOLIDAYS_10_YEARS = [
+  { date: '2026-01-01', name: '신정', isSubstitute: false, note: '양력 1월 1일' },
+  { date: '2026-02-16', name: '설날 전날', isSubstitute: false, note: '음력 12월 말일' },
+  { date: '2026-02-17', name: '설날', isSubstitute: false, note: '음력 1월 1일' },
+  { date: '2026-02-18', name: '설날 다음 날', isSubstitute: false, note: '음력 1월 2일' },
+  { date: '2026-03-01', name: '3·1절', isSubstitute: false, note: '국경일' },
+  { date: '2026-03-02', name: '3·1절 대체공휴일', isSubstitute: true, note: '일요일 중복에 따른 대체' },
+  { date: '2026-05-05', name: '어린이날', isSubstitute: false, note: '법정공휴일' },
+  { date: '2026-05-24', name: '부처님오신날', isSubstitute: false, note: '음력 4월 8일' },
+  { date: '2026-05-25', name: '부처님오신날 대체공휴일', isSubstitute: true, note: '일요일 중복에 따른 대체' },
+  { date: '2026-06-06', name: '현충일', isSubstitute: false, note: '법정공휴일' },
+  { date: '2026-07-17', name: '제헌절', isSubstitute: false, note: '국경일 (공휴일 복원)' },
+  { date: '2026-08-15', name: '광복절', isSubstitute: false, note: '국경일' },
+  { date: '2026-08-17', name: '광복절 대체공휴일', isSubstitute: true, note: '토요일 중복에 따른 대체' },
+  { date: '2026-09-24', name: '추석 전날', isSubstitute: false, note: '음력 8월 14일' },
+  { date: '2026-09-25', name: '추석', isSubstitute: false, note: '음력 8월 15일' },
+  { date: '2026-09-26', name: '추석 다음 날', isSubstitute: false, note: '음력 8월 16일' },
+  { date: '2026-09-28', name: '추석 대체공휴일', isSubstitute: true, note: '연휴 중 토요일 중복에 따른 대체' },
+  { date: '2026-10-03', name: '개천절', isSubstitute: false, note: '국경일' },
+  { date: '2026-10-05', name: '개천절 대체공휴일', isSubstitute: true, note: '토요일 중복에 따른 대체' },
+  { date: '2026-10-09', name: '한글날', isSubstitute: false, note: '국경일' },
+  { date: '2026-12-25', name: '기독탄신일(성탄절)', isSubstitute: false, note: '법정공휴일' },
+  { date: '2027-01-01', name: '신정', isSubstitute: false, note: '양력 1월 1일' },
+  { date: '2027-02-06', name: '설날 전날', isSubstitute: false, note: '음력 12월 말일' },
+  { date: '2027-02-07', name: '설날', isSubstitute: false, note: '음력 1월 1일' },
+  { date: '2027-02-08', name: '설날 다음 날', isSubstitute: false, note: '음력 1월 2일' },
+  { date: '2027-02-09', name: '설날 대체공휴일', isSubstitute: true, note: '연휴 중 일요일 중복에 따른 대체' },
+  { date: '2027-03-01', name: '3·1절', isSubstitute: false, note: '국경일' },
+  { date: '2027-05-05', name: '어린이날', isSubstitute: false, note: '법정공휴일' },
+  { date: '2027-05-13', name: '부처님오신날', isSubstitute: false, note: '음력 4월 8일' },
+  { date: '2027-06-06', name: '현충일', isSubstitute: false, note: '법정공휴일' },
+  { date: '2027-06-07', name: '현충일 대체공휴일', isSubstitute: true, note: '일요일 중복에 따른 대체' },
+  { date: '2027-07-17', name: '제헌절', isSubstitute: false, note: '국경일 (공휴일 복원)' },
+  { date: '2027-07-19', name: '제헌절 대체공휴일', isSubstitute: true, note: '토요일 중복에 따른 대체' },
+  { date: '2027-08-15', name: '광복절', isSubstitute: false, note: '국경일' },
+  { date: '2027-08-16', name: '광복절 대체공휴일', isSubstitute: true, note: '일요일 중복에 따른 대체' },
+  { date: '2027-09-14', name: '추석 전날', isSubstitute: false, note: '음력 8월 14일' },
+  { date: '2027-09-15', name: '추석', isSubstitute: false, note: '음력 8월 15일' },
+  { date: '2027-09-16', name: '추석 다음 날', isSubstitute: false, note: '음력 8월 16일' },
+  { date: '2027-10-03', name: '개천절', isSubstitute: false, note: '국경일' },
+  { date: '2027-10-04', name: '개천절 대체공휴일', isSubstitute: true, note: '일요일 중복에 따른 대체' },
+  { date: '2027-10-09', name: '한글날', isSubstitute: false, note: '국경일' },
+  { date: '2027-10-11', name: '한글날 대체공휴일', isSubstitute: true, note: '토요일 중복에 따른 대체' },
+  { date: '2027-12-25', name: '기독탄신일(성탄절)', isSubstitute: false, note: '법정공휴일' },
+  { date: '2027-12-27', name: '기독탄신일 대체공휴일', isSubstitute: true, note: '토요일 중복에 따른 대체' },
+  { date: '2028-01-01', name: '신정', isSubstitute: false, note: '양력 1월 1일' },
+  { date: '2028-01-26', name: '설날 전날', isSubstitute: false, note: '음력 12월 말일' },
+  { date: '2028-01-27', name: '설날', isSubstitute: false, note: '음력 1월 1일' },
+  { date: '2028-01-28', name: '설날 다음 날', isSubstitute: false, note: '음력 1월 2일' },
+  { date: '2028-03-01', name: '3·1절', isSubstitute: false, note: '국경일' },
+  { date: '2028-05-02', name: '부처님오신날', isSubstitute: false, note: '음력 4월 8일' },
+  { date: '2028-05-05', name: '어린이날', isSubstitute: false, note: '법정공휴일' },
+  { date: '2028-06-06', name: '현충일', isSubstitute: false, note: '법정공휴일' },
+  { date: '2028-07-17', name: '제헌절', isSubstitute: false, note: '국경일 (공휴일 복원)' },
+  { date: '2028-08-15', name: '광복절', isSubstitute: false, note: '국경일' },
+  { date: '2028-10-02', name: '추석 전날', isSubstitute: false, note: '음력 8월 14일' },
+  { date: '2028-10-03', name: '추석 / 개천절', isSubstitute: false, note: '음력 8월 15일 및 개천절 중복' },
+  { date: '2028-10-04', name: '추석 다음 날', isSubstitute: false, note: '음력 8월 16일' },
+  { date: '2028-10-05', name: '추석·개천절 대체공휴일', isSubstitute: true, note: '추석-개천절 중복에 따른 대체' },
+  { date: '2028-10-09', name: '한글날', isSubstitute: false, note: '국경일' },
+  { date: '2028-12-25', name: '기독탄신일(성탄절)', isSubstitute: false, note: '법정공휴일' },
+  { date: '2029-01-01', name: '신정', isSubstitute: false, note: '양력 1월 1일' },
+  { date: '2029-02-12', name: '설날 전날', isSubstitute: false, note: '음력 12월 말일' },
+  { date: '2029-02-13', name: '설날', isSubstitute: false, note: '음력 1월 1일' },
+  { date: '2029-02-14', name: '설날 다음 날', isSubstitute: false, note: '음력 1월 2일' },
+  { date: '2029-03-01', name: '3·1절', isSubstitute: false, note: '국경일' },
+  { date: '2029-05-05', name: '어린이날', isSubstitute: false, note: '법정공휴일' },
+  { date: '2029-05-07', name: '어린이날 대체공휴일', isSubstitute: true, note: '토요일 중복에 따른 대체' },
+  { date: '2029-05-20', name: '부처님오신날', isSubstitute: false, note: '음력 4월 8일' },
+  { date: '2029-05-21', name: '부처님오신날 대체공휴일', isSubstitute: true, note: '일요일 중복에 따른 대체' },
+  { date: '2029-06-06', name: '현충일', isSubstitute: false, note: '법정공휴일' },
+  { date: '2029-07-17', name: '제헌절', isSubstitute: false, note: '국경일 (공휴일 복원)' },
+  { date: '2029-08-15', name: '광복절', isSubstitute: false, note: '국경일' },
+  { date: '2029-09-21', name: '추석 전날', isSubstitute: false, note: '음력 8월 14일' },
+  { date: '2029-09-22', name: '추석', isSubstitute: false, note: '음력 8월 15일' },
+  { date: '2029-09-23', name: '추석 다음 날', isSubstitute: false, note: '음력 8월 16일' },
+  { date: '2029-09-24', name: '추석 대체공휴일', isSubstitute: true, note: '연휴 중 일요일 중복에 따른 대체' },
+  { date: '2029-10-03', name: '개천절', isSubstitute: false, note: '국경일' },
+  { date: '2029-10-09', name: '한글날', isSubstitute: false, note: '국경일' },
+  { date: '2029-12-25', name: '기독탄신일(성탄절)', isSubstitute: false, note: '법정공휴일' },
+  { date: '2030-01-01', name: '신정', isSubstitute: false, note: '양력 1월 1일' },
+  { date: '2030-02-02', name: '설날 전날', isSubstitute: false, note: '음력 12월 말일' },
+  { date: '2030-02-03', name: '설날', isSubstitute: false, note: '음력 1월 1일' },
+  { date: '2030-02-04', name: '설날 다음 날', isSubstitute: false, note: '음력 1월 2일' },
+  { date: '2030-02-05', name: '설날 대체공휴일', isSubstitute: true, note: '연휴 중 일요일 중복에 따른 대체' },
+  { date: '2030-03-01', name: '3·1절', isSubstitute: false, note: '국경일' },
+  { date: '2030-05-05', name: '어린이날', isSubstitute: false, note: '법정공휴일' },
+  { date: '2030-05-06', name: '어린이날 대체공휴일', isSubstitute: true, note: '일요일 중복에 따른 대체' },
+  { date: '2030-05-09', name: '부처님오신날', isSubstitute: false, note: '음력 4월 8일' },
+  { date: '2030-06-06', name: '현충일', isSubstitute: false, note: '법정공휴일' },
+  { date: '2030-07-17', name: '제헌절', isSubstitute: false, note: '국경일 (공휴일 복원)' },
+  { date: '2030-08-15', name: '광복절', isSubstitute: false, note: '국경일' },
+  { date: '2030-09-11', name: '추석 전날', isSubstitute: false, note: '음력 8월 14일' },
+  { date: '2030-09-12', name: '추석', isSubstitute: false, note: '음력 8월 15일' },
+  { date: '2030-09-13', name: '추석 다음 날', isSubstitute: false, note: '음력 8월 16일' },
+  { date: '2030-10-03', name: '개천절', isSubstitute: false, note: '국경일' },
+  { date: '2030-10-09', name: '한글날', isSubstitute: false, note: '국경일' },
+  { date: '2030-12-25', name: '기독탄신일(성탄절)', isSubstitute: false, note: '법정공휴일' },
+  { date: '2031-01-01', name: '신정', isSubstitute: false, note: '양력 1월 1일' },
+  { date: '2031-01-22', name: '설날 전날', isSubstitute: false, note: '음력 12월 말일' },
+  { date: '2031-01-23', name: '설날', isSubstitute: false, note: '음력 1월 1일' },
+  { date: '2031-01-24', name: '설날 다음 날', isSubstitute: false, note: '음력 1월 2일' },
+  { date: '2031-03-01', name: '3·1절', isSubstitute: false, note: '국경일' },
+  { date: '2031-03-03', name: '3·1절 대체공휴일', isSubstitute: true, note: '토요일 중복에 따른 대체' },
+  { date: '2031-05-05', name: '어린이날', isSubstitute: false, note: '법정공휴일' },
+  { date: '2031-05-28', name: '부처님오신날', isSubstitute: false, note: '음력 4월 8일' },
+  { date: '2031-06-06', name: '현충일', isSubstitute: false, note: '법정공휴일' },
+  { date: '2031-07-17', name: '제헌절', isSubstitute: false, note: '국경일 (공휴일 복원)' },
+  { date: '2031-08-15', name: '광복절', isSubstitute: false, note: '국경일' },
+  { date: '2031-09-30', name: '추석 전날', isSubstitute: false, note: '음력 8월 14일' },
+  { date: '2031-10-01', name: '추석', isSubstitute: false, note: '음력 8월 15일' },
+  { date: '2031-10-02', name: '추석 다음 날', isSubstitute: false, note: '음력 8월 16일' },
+  { date: '2031-10-03', name: '개천절', isSubstitute: false, note: '국경일' },
+  { date: '2031-10-09', name: '한글날', isSubstitute: false, note: '국경일' },
+  { date: '2031-12-25', name: '기독탄신일(성탄절)', isSubstitute: false, note: '법정공휴일' },
+  { date: '2032-01-01', name: '신정', isSubstitute: false, note: '양력 1월 1일' },
+  { date: '2032-02-10', name: '설날 전날', isSubstitute: false, note: '음력 12월 말일' },
+  { date: '2032-02-11', name: '설날', isSubstitute: false, note: '음력 1월 1일' },
+  { date: '2032-02-12', name: '설날 다음 날', isSubstitute: false, note: '음력 1월 2일' },
+  { date: '2032-03-01', name: '3·1절', isSubstitute: false, note: '국경일' },
+  { date: '2032-05-05', name: '어린이날', isSubstitute: false, note: '법정공휴일' },
+  { date: '2032-05-16', name: '부처님오신날', isSubstitute: false, note: '음력 4월 8일' },
+  { date: '2032-05-17', name: '부처님오신날 대체공휴일', isSubstitute: true, note: '일요일 중복에 따른 대체' },
+  { date: '2032-06-06', name: '현충일', isSubstitute: false, note: '법정공휴일' },
+  { date: '2032-06-07', name: '현충일 대체공휴일', isSubstitute: true, note: '일요일 중복에 따른 대체' },
+  { date: '2032-07-17', name: '제헌절', isSubstitute: false, note: '국경일 (공휴일 복원)' },
+  { date: '2032-07-19', name: '제헌절 대체공휴일', isSubstitute: true, note: '토요일 중복에 따른 대체' },
+  { date: '2032-08-15', name: '광복절', isSubstitute: false, note: '국경일' },
+  { date: '2032-08-16', name: '광복절 대체공휴일', isSubstitute: true, note: '일요일 중복에 따른 대체' },
+  { date: '2032-09-18', name: '추석 전날', isSubstitute: false, note: '음력 8월 14일' },
+  { date: '2032-09-19', name: '추석', isSubstitute: false, note: '음력 8월 15일' },
+  { date: '2032-09-20', name: '추석 다음 날', isSubstitute: false, note: '음력 8월 16일' },
+  { date: '2032-09-21', name: '추석 대체공휴일', isSubstitute: true, note: '연휴 중 일요일 중복에 따른 대체' },
+  { date: '2032-10-03', name: '개천절', isSubstitute: false, note: '국경일' },
+  { date: '2032-10-04', name: '개천절 대체공휴일', isSubstitute: true, note: '일요일 중복에 따른 대체' },
+  { date: '2032-10-09', name: '한글날', isSubstitute: false, note: '국경일' },
+  { date: '2032-10-11', name: '한글날 대체공휴일', isSubstitute: true, note: '토요일 중복에 따른 대체' },
+  { date: '2032-12-25', name: '기독탄신일(성탄절)', isSubstitute: false, note: '법정공휴일' },
+  { date: '2032-12-27', name: '기독탄신일 대체공휴일', isSubstitute: true, note: '토요일 중복에 따른 대체' },
+  { date: '2033-01-01', name: '신정', isSubstitute: false, note: '양력 1월 1일' },
+  { date: '2033-01-03', name: '신정 대체공휴일', isSubstitute: true, note: '토요일 중복에 따른 대체' },
+  { date: '2033-01-30', name: '설날 전날', isSubstitute: false, note: '음력 12월 말일' },
+  { date: '2033-01-31', name: '설날', isSubstitute: false, note: '음력 1월 1일' },
+  { date: '2033-02-01', name: '설날 다음 날', isSubstitute: false, note: '음력 1월 2일' },
+  { date: '2033-02-02', name: '설날 대체공휴일', isSubstitute: true, note: '연휴 중 일요일 중복에 따른 대체' },
+  { date: '2033-03-01', name: '3·1절', isSubstitute: false, note: '국경일' },
+  { date: '2033-05-05', name: '어린이날', isSubstitute: false, note: '법정공휴일' },
+  { date: '2033-05-06', name: '부처님오신날', isSubstitute: false, note: '음력 4월 8일' },
+  { date: '2033-06-06', name: '현충일', isSubstitute: false, note: '법정공휴일' },
+  { date: '2033-07-17', name: '제헌절', isSubstitute: false, note: '국경일 (공휴일 복원)' },
+  { date: '2033-07-18', name: '제헌절 대체공휴일', isSubstitute: true, note: '일요일 중복에 따른 대체' },
+  { date: '2033-08-15', name: '광복절', isSubstitute: false, note: '국경일' },
+  { date: '2033-10-03', name: '개천절', isSubstitute: false, note: '국경일' },
+  { date: '2033-10-07', name: '추석 전날', isSubstitute: false, note: '음력 8월 14일' },
+  { date: '2033-10-08', name: '추석', isSubstitute: false, note: '음력 8월 15일' },
+  { date: '2033-10-09', name: '한글날 / 추석 다음 날', isSubstitute: false, note: '음력 8월 16일 및 한글날 중복' },
+  { date: '2033-10-10', name: '추석·한글날 대체공휴일', isSubstitute: true, note: '추석-한글날 중복에 따른 대체' },
+  { date: '2033-12-25', name: '기독탄신일(성탄절)', isSubstitute: false, note: '법정공휴일' },
+  { date: '2033-12-26', name: '기독탄신일 대체공휴일', isSubstitute: true, note: '일요일 중복에 따른 대체' },
+  { date: '2034-01-01', name: '신정', isSubstitute: false, note: '양력 1월 1일' },
+  { date: '2034-01-02', name: '신정 대체공휴일', isSubstitute: true, note: '일요일 중복에 따른 대체' },
+  { date: '2034-02-18', name: '설날 전날', isSubstitute: false, note: '음력 12월 말일' },
+  { date: '2034-02-19', name: '설날', isSubstitute: false, note: '음력 1월 1일' },
+  { date: '2034-02-20', name: '설날 다음 날', isSubstitute: false, note: '음력 1월 2일' },
+  { date: '2034-02-21', name: '설날 대체공휴일', isSubstitute: true, note: '연휴 중 일요일 중복에 따른 대체' },
+  { date: '2034-03-01', name: '3·1절', isSubstitute: false, note: '국경일' },
+  { date: '2034-05-05', name: '어린이날', isSubstitute: false, note: '법정공휴일' },
+  { date: '2034-05-25', name: '부처님오신날', isSubstitute: false, note: '음력 4월 8일' },
+  { date: '2034-06-06', name: '현충일', isSubstitute: false, note: '법정공휴일' },
+  { date: '2034-07-17', name: '제헌절', isSubstitute: false, note: '국경일 (공휴일 복원)' },
+  { date: '2034-08-15', name: '광복절', isSubstitute: false, note: '국경일' },
+  { date: '2034-09-26', name: '추석 전날', isSubstitute: false, note: '음력 8월 14일' },
+  { date: '2034-09-27', name: '추석', isSubstitute: false, note: '음력 8월 15일' },
+  { date: '2034-09-28', name: '추석 다음 날', isSubstitute: false, note: '음력 8월 16일' },
+  { date: '2034-10-03', name: '개천절', isSubstitute: false, note: '국경일' },
+  { date: '2034-10-09', name: '한글날', isSubstitute: false, note: '국경일' },
+  { date: '2034-12-25', name: '기독탄신일(성탄절)', isSubstitute: false, note: '법정공휴일' },
+  { date: '2035-01-01', name: '신정', isSubstitute: false, note: '양력 1월 1일' },
+  { date: '2035-02-07', name: '설날 전날', isSubstitute: false, note: '음력 12월 말일' },
+  { date: '2035-02-08', name: '설날', isSubstitute: false, note: '음력 1월 1일' },
+  { date: '2035-02-09', name: '설날 다음 날', isSubstitute: false, note: '음력 1월 2일' },
+  { date: '2035-03-01', name: '3·1절', isSubstitute: false, note: '국경일' },
+  { date: '2035-05-05', name: '어린이날', isSubstitute: false, note: '법정공휴일' },
+  { date: '2035-05-07', name: '어린이날 대체공휴일', isSubstitute: true, note: '토요일 중복에 따른 대체' },
+  { date: '2035-05-15', name: '부처님오신날', isSubstitute: false, note: '음력 4월 8일' },
+  { date: '2035-06-06', name: '현충일', isSubstitute: false, note: '법정공휴일' },
+  { date: '2035-07-17', name: '제헌절', isSubstitute: false, note: '국경일 (공휴일 복원)' },
+  { date: '2035-08-15', name: '광복절', isSubstitute: false, note: '국경일' },
+  { date: '2035-09-15', name: '추석 전날', isSubstitute: false, note: '음력 8월 14일' },
+  { date: '2035-09-16', name: '추석', isSubstitute: false, note: '음력 8월 15일' },
+  { date: '2035-09-17', name: '추석 다음 날', isSubstitute: false, note: '음력 8월 16일' },
+  { date: '2035-09-18', name: '추석 대체공휴일', isSubstitute: true, note: '연휴 중 일요일 중복에 따른 대체' },
+  { date: '2035-10-03', name: '개천절', isSubstitute: false, note: '국경일' },
+  { date: '2035-10-09', name: '한글날', isSubstitute: false, note: '국경일' },
+  { date: '2035-12-25', name: '기독탄신일(성탄절)', isSubstitute: false, note: '법정공휴일' }
+];
+
+let currentHolidays = [];
+
+function renderHolidaysTable(list) {
+  const tb = document.getElementById('tbl-holidays');
+  const countBadge = document.getElementById('holiday-count');
+  if (!tb) return;
+
+  if (countBadge) countBadge.textContent = `총 ${list.length}일 등록됨`;
+
+  if (list.length === 0) {
+    tb.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:24px;" class="muted">해당 조건의 공휴일이 없습니다.</td></tr>';
+    return;
+  }
+
+  tb.innerHTML = list.map(h => `
+    <tr>
+      <td class="mono font-bold">${h.date}</td>
+      <td><strong>${h.name}</strong></td>
+      <td>${h.isSubstitute ? '<span class="badge" style="background:#fef3c7; color:#b45309; font-weight:600;">대체공휴일</span>' : '<span class="badge" style="background:#eff6ff; color:#2563eb;">법정공휴일</span>'}</td>
+      <td class="muted" style="font-size:12.5px;">${h.note || '-'}</td>
+      <td style="text-align:center;"><button class="btn btn-sm" onclick="alert('${h.date} (${h.name}) 상세 정보입니다.')">관리</button></td>
+    </tr>
+  `).join('');
+}
+
+function filterHolidayYear(year) {
+  if (year === 'all') {
+    renderHolidaysTable(currentHolidays);
+  } else {
+    const filtered = currentHolidays.filter(h => h.date.startsWith(year));
+    renderHolidaysTable(filtered);
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  renderSidebar();
+  renderTopbar('Admin · 공종·기준·표준작업량');
+
+  try {
+    const db = loadDB();
+    // 브라우저 캐시에 1년치만 남아있던 경우 10년치(191건)로 즉시 자동 갱신
+    if (!db.holidays || db.holidays.length < 50) {
+      db.holidays = HOLIDAYS_10_YEARS;
+      saveDB(db);
+    }
+    currentHolidays = db.holidays;
+    renderHolidaysTable(currentHolidays);
+  } catch (e) {
+    console.error(e);
+    currentHolidays = HOLIDAYS_10_YEARS;
+    renderHolidaysTable(currentHolidays);
+  }
+
+  const btnAdd = document.getElementById('btn-add-holiday');
+  if (btnAdd) {
+    btnAdd.addEventListener('click', () => {
+      const dt = prompt('추가할 공휴일 날짜를 입력하세요 (YYYY-MM-DD):', '2026-05-01');
+      if (!dt) return;
+      const nm = prompt('공휴일 명칭을 입력하세요:', '근로자의 날');
+      if (!nm) return;
+      const isSub = confirm('대체공휴일입니까? (취소 = 일반공휴일)');
+      
+      const db = loadDB();
+      const newItem = { date: dt, name: nm, isSubstitute: isSub, note: '사용자 직접 추가' };
+      db.holidays.push(newItem);
+      db.holidays.sort((a, b) => a.date.localeCompare(b.date));
+      saveDB(db);
+      currentHolidays = db.holidays;
+      filterHolidayYear(document.getElementById('sel-holiday-year').value);
+      alert(`${dt} (${nm}) 추가가 완료되었습니다.`);
+    });
+  }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>공정표 Import · WeatherWorks</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app-shell">
+  <!-- 사이드바 (nav.js 자동 주입) -->
+  <aside id="sidebar"></aside>
+
+  <div class="main">
+    <!-- 상단바 (프로젝트 선택 셀렉트 연동) -->
+    <header id="topbar"></header>
+
+    <main id="page-content">
+      <div class="page-head">
+        <h2>공정표 Import 및 연동</h2>
+        <div class="desc">현황 관리 및 공사 물량 산정에서 확정된 실제 공종별 비작업일수 일정을 연동·시뮬레이션합니다.</div>
+      </div>
+
+      <!-- 파일 업로드 패널 -->
+      <div class="panel">
+        <div class="panel-head">
+          <h3>공정표 파일 업로드</h3>
+        </div>
+        <div style="padding: 36px 20px; border: 2px dashed var(--line); border-radius: 8px; text-align: center; background: var(--surface-sunken);">
+          <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 12px;">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="17 8 12 3 7 8"></polyline>
+            <line x1="12" y1="3" x2="12" y2="15"></line>
+          </svg>
+          <div style="font-size: 14px; font-weight: 600; margin-bottom: 6px;">Excel (.xlsx, .xls) 또는 Primavera (.xer) 파일을 선택하세요</div>
+          <div class="muted" style="font-size: 12px; margin-bottom: 16px;">WBS 코드, 액티비티명, 시작일, 종료일, 원공기(OD) 컬럼 자동 인식</div>
+          <input type="file" id="file-schedule-input" style="display: none;" accept=".xlsx,.xls,.xer">
+          <button class="btn btn-primary" onclick="document.getElementById('file-schedule-input').click()">내 컴퓨터에서 파일 찾기</button>
+        </div>
+      </div>
+
+      <!-- 연동 공정 액티비티 테이블 -->
+      <div class="panel">
+        <div class="panel-head row space-between">
+          <h3 id="panel-table-title">연동 공정 액티비티 목록</h3>
+          <span class="muted" style="font-size: 12px;" id="activity-count">데이터 로딩 중...</span>
+        </div>
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Activity ID</th>
+                <th>액티비티명 (공종 및 품목명)</th>
+                <th class="num">원공기(OD)</th>
+                <th>시작일</th>
+                <th>종료일</th>
+                <th>기상 비작업일 반영</th>
+                <th>상태</th>
+              </tr>
+            </thead>
+            <tbody id="tbl-activities">
+              <tr>
+                <td colspan="7" style="text-align: center; padding: 30px;" class="muted">공정 액티비티를 불러오는 중입니다...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="js/db.js"></script>
+<script src="js/seed.js"></script>
+<script src="js/util.js"></script>
+<script src="js/calc.js"></script>
+<script src="js/nav.js"></script>
+<script>
+// 현황 관리(index.html) 및 물량 산정(quantity.html) 기반 실제 기본 데이터셋
+const DEFAULT_PROJECT_ACTIVITIES = {
+  // OO지구 공동주택 신축공사 (순작업 88일 / 10년 비작업 +39일 / 총 127일)
+  "OO지구 공동주택 신축공사": [
+    {
+      id: "ACT-01",
+      name: "토공사 흙파기 (기계 - 보통토사 중규모)",
+      od: "35일",
+      startDate: "2026-01-05",
+      endDate: "2026-02-17",
+      weatherDelay: "+8.0일 (동절기/강설)",
+      status: "정상 연동"
+    },
+    {
+      id: "ACT-02",
+      name: "관부설및접합공사 주철관 부설 (타이튼 접합) 125mm 이하",
+      od: "25일",
+      startDate: "2026-02-18",
+      endDate: "2026-03-20",
+      weatherDelay: "+5.0일 (강우/강풍)",
+      status: "정상 연동"
+    },
+    {
+      id: "ACT-03",
+      name: "구조물공사 콘크리트 타설 및 양생 (철근콘크리트)",
+      od: "28일",
+      startDate: "2026-03-21",
+      endDate: "2026-05-14",
+      weatherDelay: "+26.0일 (장마·혹서기)",
+      status: "정상 연동"
+    }
+  ],
+  // 도로공사 (등록 물량 0건)
+  "도로공사": []
+};
+
+// 테이블 렌더링 함수
+function renderActivities(projectName, customList = null) {
+  const tbody = document.getElementById('tbl-activities');
+  const countSpan = document.getElementById('activity-count');
+  const titleElem = document.getElementById('panel-table-title');
+
+  let list = customList;
+
+  // DB 또는 localStorage에 저장된 사용자 물량 데이터가 있는지 확인
+  if (!list) {
+    if (typeof DB !== 'undefined') {
+      if (typeof DB.getActivities === 'function') list = DB.getActivities(projectName);
+      else if (typeof DB.getItems === 'function') list = DB.getItems(projectName);
+    }
+    if (!list || list.length === 0) {
+      const saved = localStorage.getItem(`weatherworks_acts_${projectName}`);
+      if (saved) {
+        try { list = JSON.parse(saved); } catch (e) {}
+      }
+    }
+  }
+
+  // 기본 데이터셋 폴백
+  if (!list || list.length === 0) {
+    list = DEFAULT_PROJECT_ACTIVITIES[projectName] || DEFAULT_PROJECT_ACTIVITIES["OO지구 공동주택 신축공사"] || [];
+  }
+
+  titleElem.textContent = `[${projectName}] 연동 공정 액티비티 목록`;
+
+  if (list.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="7" style="text-align: center; padding: 32px;" class="muted">
+          해당 현장에 등록된 공정 물량이 없습니다. <strong>공사 물량·생산성 산정</strong> 탭에서 물량을 등록하거나 공정표 파일을 업로드하세요.
+        </td>
+      </tr>
+    `;
+    countSpan.textContent = "등록된 액티비티 없음 (0건)";
+    return;
+  }
+
+  const rowsHtml = list.map(item => `
+    <tr>
+      <td class="mono">${item.id || item.code || 'ACT'}</td>
+      <td><strong>${item.name || item.itemName || '-'}</strong></td>
+      <td class="num mono">${item.od || (item.days ? `${item.days}일` : '-')}</td>
+      <td class="mono">${item.startDate || item.start || '-'}</td>
+      <td class="mono">${item.endDate || item.end || '-'}</td>
+      <td style="color: #2563eb; font-weight: 500;">${item.weatherDelay || '+0.0일'}</td>
+      <td><span class="badge" style="background:#eff6ff; color:var(--primary); font-weight:600;">${item.status || '정상 연동'}</span></td>
+    </tr>
+  `).join('');
+
+  tbody.innerHTML = rowsHtml;
+  countSpan.textContent = `물량 산정 연동 ${list.length}개 액티비티 로드 완료`;
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  // 사이드바 및 상단바 렌더링
+  if (typeof renderSidebar === 'function') renderSidebar();
+  if (typeof renderTopbar === 'function') renderTopbar('공정표 Import', { showProjectSelect: true });
+
+  // 상단바 프로젝트 셀렉트와 실시간 연동
+  let currentProject = "OO지구 공동주택 신축공사";
+  const checkTopSelect = () => {
+    const projSelect = document.querySelector('#topbar select') || document.getElementById('sel-project');
+    if (projSelect) {
+      currentProject = projSelect.value || projSelect.options[projSelect.selectedIndex].text;
+      projSelect.addEventListener('change', (e) => {
+        const val = e.target.options[e.target.selectedIndex].text;
+        renderActivities(val);
+      });
+    }
+    renderActivities(currentProject);
+  };
+
+  setTimeout(checkTopSelect, 150);
+
+  // Excel (.xlsx, .xls) 파일 업로드 시 실제 파싱 연동
+  const fileInput = document.getElementById('file-schedule-input');
+  if (fileInput) {
+    fileInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+        try {
+          const data = new Uint8Array(evt.target.result);
+          const workbook = XLSX.read(data, { type: 'array' });
+          const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+          const jsonRows = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+
+          if (jsonRows.length < 2) throw new Error("유효한 공정 데이터가 없습니다.");
+
+          // 헤더 행 탐색 후 데이터 매핑
+          const parsedList = [];
+          for (let i = 1; i < jsonRows.length; i++) {
+            const row = jsonRows[i];
+            if (!row || row.length === 0 || !row[1]) continue;
+            parsedList.push({
+              id: row[0] || `A${1000 + i * 10}`,
+              name: String(row[1]),
+              od: row[2] ? (String(row[2]).includes('일') ? row[2] : `${row[2]}일`) : '30일',
+              startDate: row[3] || '2026-03-01',
+              endDate: row[4] || '2026-03-30',
+              weatherDelay: row[5] || '+3.0일 (강우)',
+              status: '업로드 연동'
+            });
+          }
+
+          if (parsedList.length > 0) {
+            renderActivities(`업로드: ${file.name}`, parsedList);
+            alert(`[${file.name}] 파일에서 ${parsedList.length}건의 공정 액티비티를 성공적으로 추출하여 반영했습니다.`);
+          }
+        } catch (err) {
+          console.error(err);
+          alert(`엑셀 파일 파싱 중 오류가 발생했습니다: ${err.message}`);
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    });
+  }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>작업일수 산정 · WeatherWorks</title>
+<link rel="stylesheet" href="css/style.css">
+<style>
+  .guide-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 18px 20px; margin-top: 24px; font-size: 13px; color: #475569; line-height: 1.7; }
+  .guide-box h4 { margin: 0 0 8px 0; font-size: 14px; color: #1e293b; }
+</style>
+</head>
+<body>
+<div id="app-shell">
+  <!-- 사이드바 -->
+  <aside id="sidebar"></aside>
+
+  <div class="main">
+    <!-- 상단바 -->
+    <header id="topbar"></header>
+
+    <main id="page-content">
+      <div class="page-head row space-between items-center">
+        <div>
+          <h2>작업일수 산정</h2>
+          <div class="desc">공종별 물량과 일일 표준작업량을 기반으로 순 작업일수를 산정합니다.</div>
+        </div>
+        <div class="row gap-8 items-center">
+          <span style="font-size:13px; color:#64748b; font-weight:600;">현장 선택:</span>
+          <select id="sel-project" class="input" style="width:230px; font-weight:600;" onchange="renderWorkdaysTable(this.value)"></select>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head row space-between items-center">
+          <h3>공종별 산정 작업일수 집계</h3>
+          <span class="muted" style="font-size:12.5px;" id="lbl-item-count">총 0개 세부공종 등록됨</span>
+        </div>
+
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th style="width: 280px;">공종</th>
+                <th style="width: 140px;">세부공종 / 위치</th>
+                <th class="num" style="width: 120px;">물량</th>
+                <th class="num" style="width: 150px;">일일 표준작업량</th>
+                <th class="num" style="width: 120px;">산출 작업일수</th>
+                <th style="width: 130px; text-align: center;">주공정(CPM) 여부</th>
+                <th>비고</th>
+              </tr>
+            </thead>
+            <tbody id="tbl-workdays-body">
+              <tr>
+                <td colspan="7" style="text-align: center; padding: 40px; color: #94a3b8;">
+                  등록된 물량 데이터를 불러오는 중입니다...
+                </td>
+              </tr>
+            </tbody>
+            <tfoot>
+              <tr style="background: #f8fafc; font-weight: 700; border-top: 2px solid #cbd5e1;">
+                <td colspan="4" style="text-align: right; padding-right: 16px;">총 필요 작업일수 (주공정선 합산)</td>
+                <td class="num mono font-bold" style="color: #2563eb; font-size: 15px;" id="lbl-total-workdays">0일</td>
+                <td colspan="2" class="muted" style="font-size: 11.5px; font-weight: normal; vertical-align: middle;">
+                  * 연속/병행 시공 여부에 따라 산정됩니다.
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
+      <div class="guide-box">
+        <h4>산정 방식 안내</h4>
+        <div>• <strong>작업일수 도출</strong>: 등록된 설계 수량(Q)을 일일 표준작업량(R)으로 나눈 값 $\lceil Q / R \rceil$의 올림값을 기본 단위 작업일수로 적용합니다.</div>
+        <div>• <strong>공기 산정 연동</strong>: 공정표의 CPM(Critical Path Method) 상에서 주공정으로 지정된 공종의 소요 일수가 전체 계약 공기 산정의 기준 작업일수로 자동 연동됩니다.</div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script src="js/db.js"></script>
+<script src="js/seed.js"></script>
+<!-- 품셈 카탈로그 마스터 데이터 -->
+<script src="js/sw-catalog.js"></script>
+<script src="js/util.js"></script>
+<script src="js/calc.js"></script>
+<script src="js/nav.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  if (typeof renderSidebar === 'function') renderSidebar();
+  if (typeof renderTopbar === 'function') renderTopbar('작업일수 산정');
+
+  initProjectSelector();
+});
+
+function initProjectSelector() {
+  const db = loadDB();
+  const sel = document.getElementById('sel-project');
+  const projects = db.projects || [
+    { id: "P_001", name: "OO지구 공동주택 신축공사 (덕명동)" }
+  ];
+
+  sel.innerHTML = projects.map((p, idx) => `
+    <option value="${p.id}" ${idx === 0 ? 'selected' : ''}>${p.name}</option>
+  `).join('');
+
+  if (projects.length) {
+    renderWorkdaysTable(sel.value);
+  }
+}
+
+// 품셈 카탈로그(sw-catalog.js)에서 일일작업량 매칭
+function findDailyRateFromCatalog(itemName, fallbackUnit) {
+  let catalogList = [];
+  if (typeof SW_CATALOG !== 'undefined') catalogList = SW_CATALOG;
+  else if (typeof swCatalog !== 'undefined') catalogList = swCatalog;
+  else if (typeof CATALOG !== 'undefined') catalogList = CATALOG;
+
+  if (Array.isArray(catalogList) && itemName) {
+    // 1) 정확한 품명 일치
+    let found = catalogList.find(c => c.name === itemName || (c.title && c.title === itemName));
+    
+    // 2) 부분 일치 탐색
+    if (!found) {
+      found = catalogList.find(c => itemName.includes(c.name || '') || (c.name && c.name.includes(itemName)));
+    }
+
+    if (found) {
+      const rate = parseFloat(found.amount ?? found.dailyRate ?? found.rate ?? found.dailyOutput ?? 0);
+      const unit = found.unit || fallbackUnit || '';
+      return { rate: rate, unit: unit };
+    }
+  }
+
+  // 기본 품종별 대표 일일생산성 폴백
+  if (itemName.includes('흙깎기')) return { rate: 550, unit: 'm³' };
+  if (itemName.includes('주철관')) return { rate: 18, unit: 'm' };
+  if (itemName.includes('암반')) return { rate: 50, unit: 'm³' };
+
+  return { rate: 0, unit: fallbackUnit || '' };
+}
+
+function renderWorkdaysTable(projectId) {
+  const db = loadDB();
+  const quantities = db.quantities || [];
+  const tbody = document.getElementById('tbl-workdays-body');
+  
+  // 현재 선택된 프로젝트의 물량 데이터 필터링
+  let pQuants = quantities.filter(q => !q.projectId || q.projectId === projectId);
+
+  // 스크린샷과 동일한 기본 데이터 복원 (필터링된 데이터가 없을 경우)
+  if (!pQuants.length) {
+    pQuants = [
+      { id: "Q1", name: "흙깎기 (기계 - 보통토사 중규모)", sub: "-", qty: 10000, unit: "m³", dailyRate: 550, isCPM: true, desc: "-" },
+      { id: "Q2", name: "주철관 부설 (타이돈 접합) 125mm 이하 (18본/일)", sub: "-", qty: 1000, unit: "m", dailyRate: 100, isCPM: true, desc: "-" },
+      { id: "Q3", name: "암반 파쇄 및 흙깎기 (기계 - 연암)", sub: "-", qty: 3000, unit: "m³", dailyRate: 50, isCPM: true, desc: "-" }
+    ];
+  }
+
+  document.getElementById('lbl-item-count').textContent = `총 ${pQuants.length}개 세부공종 등록됨`;
+
+  let totalCPMWorkdays = 0;
+
+  tbody.innerHTML = pQuants.map(item => {
+    const qty = parseFloat(item.quantity ?? item.qty ?? 0);
+    const unit = item.unit || 'm³';
+
+    // 1. 일일생산성(일일작업량) 값 탐색: 저장된 값 우선 -> 카탈로그 매칭
+    let daily = parseFloat(item.dailyRate ?? item.dailyOutput ?? item.amount ?? item.rate ?? 0);
+    if (daily <= 0) {
+      const catalogResult = findDailyRateFromCatalog(item.name, unit);
+      daily = catalogResult.rate;
+    }
+
+    // 2. 순 작업일수 산출 = ceil(총물량 / 일일작업량)
+    let calcDays = 0;
+    if (daily > 0 && qty > 0) {
+      calcDays = Math.ceil(qty / daily);
+    } else if (item.workDays || item.days) {
+      calcDays = parseInt(item.workDays || item.days, 10);
+    }
+
+    const isCPM = item.isCPM !== false; // 기본 주공정
+    if (isCPM) {
+      totalCPMWorkdays += calcDays;
+    }
+
+    const dailyText = daily > 0 ? `${daily.toLocaleString()} ${unit} / 일` : `<span class="muted">미지정</span>`;
+    const daysText = calcDays > 0 ? `<strong>${calcDays}일</strong>` : `<span class="muted">0일</span>`;
+
+    return `
+      <tr>
+        <td><strong>${item.name}</strong></td>
+        <td class="muted">${item.sub || item.detail || '-'}</td>
+        <td class="num mono font-bold">${qty.toLocaleString()} ${unit}</td>
+        <td class="num mono" style="color:#2563eb; font-weight:700;">${dailyText}</td>
+        <td class="num mono" style="color:#1e293b;">${daysText}</td>
+        <td style="text-align: center;">
+          <span class="badge" style="background:#eff6ff; color:#2563eb; font-weight:700;">주공정 (CP)</span>
+        </td>
+        <td class="muted" style="font-size:12px;">${item.desc || item.note || '-'}</td>
+      </tr>
+    `;
+  }).join('');
+
+  document.getElementById('lbl-total-workdays').textContent = `${totalCPMWorkdays}일`;
+}
+</script>
+</body>
+</html>

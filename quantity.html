@@ -1,0 +1,419 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>공사 물량·생산성 산정 · WeatherWorks</title>
+<link rel="stylesheet" href="css/style.css">
+<style>
+  /* 검색 상단 패널 */
+  .search-panel { background: #fff; border: 1px solid var(--line, #e2e8f0); border-radius: 8px; padding: 16px 20px; margin-bottom: 20px; }
+  .search-input-wrap { position: relative; width: 100%; }
+  .search-input { width: 100%; height: 42px; padding: 0 16px 0 40px; border: 1.5px solid #cbd5e1; border-radius: 6px; font-size: 14px; background: #fff; box-sizing: border-box; }
+  .search-input:focus { border-color: var(--primary, #2563eb); outline: none; box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
+  .search-icon { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: #94a3b8; font-size: 16px; }
+  .search-results-dropdown { position: absolute; top: 46px; left: 0; right: 0; background: #fff; border: 1px solid #cbd5e1; border-radius: 6px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); max-height: 280px; overflow-y: auto; z-index: 100; display: none; }
+  .search-item { padding: 10px 14px; border-bottom: 1px solid #f1f5f9; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+  .search-item:hover { background: #f8fafc; }
+  .search-item .title { font-weight: 600; font-size: 13.5px; color: #1e293b; }
+  .search-item .sub { font-size: 12px; color: #64748b; margin-top: 2px; }
+
+  /* 물량 산정 입력 폼 레이아웃 */
+  .calc-form-grid { display: grid; grid-template-columns: 140px minmax(280px, 1fr) 150px 170px auto; gap: 12px; align-items: flex-end; }
+  .form-group { display: flex; flex-direction: column; gap: 6px; }
+  .form-group label { font-size: 12px; font-weight: 600; color: #64748b; }
+  .form-group select { height: 38px; padding: 0 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; background: #fff; width: 100%; box-sizing: border-box; }
+  
+  /* 단위 인라인 부착 인풋 */
+  .unit-input-wrap { display: flex; align-items: center; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; overflow: hidden; height: 38px; }
+  .unit-input-wrap input { border: none; outline: none; height: 100%; width: 100%; padding: 0 8px 0 12px; font-size: 13.5px; box-sizing: border-box; }
+  .unit-input-wrap input:read-only { background: #f8fafc; color: #1e293b; font-weight: 700; }
+  .unit-badge { padding: 0 10px; background: #f1f5f9; color: #475569; font-size: 12px; font-weight: 600; border-left: 1px solid #e2e8f0; height: 100%; display: flex; align-items: center; white-space: nowrap; }
+
+  /* 상세 안내 배너 */
+  .spec-detail-box { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 12px 16px; margin-bottom: 16px; font-size: 13px; color: #1e40af; line-height: 1.6; }
+  .spec-detail-box .detail-title { font-weight: 700; font-size: 13.5px; margin-bottom: 4px; display: flex; justify-content: space-between; }
+  .spec-detail-box .detail-condition { color: #334155; font-size: 12px; background: rgba(255,255,255,0.7); padding: 6px 10px; border-radius: 4px; border: 1px solid #dbeafe; margin-top: 6px; white-space: pre-line; }
+</style>
+</head>
+<body>
+<div id="app-shell">
+  <!-- 사이드바 -->
+  <aside id="sidebar"></aside>
+
+  <div class="main">
+    <!-- 상단바 -->
+    <header id="topbar"></header>
+
+    <main id="page-content">
+      <div class="page-head row space-between">
+        <div>
+          <h2>공사 물량·생산성 산정</h2>
+          <div class="desc">표준품셈 201개 카탈로그에서 품목을 검색하거나 선택하여 일일작업량과 총 소요 작업일수를 산정합니다.</div>
+        </div>
+        <div class="row gap-8 items-center">
+          <span style="font-size:13px; color:#64748b; font-weight:600;">현장:</span>
+          <select id="sel-current-project" class="input" style="width:230px; font-weight:600;" onchange="switchProject(this.value)"></select>
+        </div>
+      </div>
+
+      <!-- 상단: 201개 품셈 통합 실시간 검색창 -->
+      <div class="search-panel">
+        <div class="search-input-wrap">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="catalog-search" class="search-input" placeholder="표준품셈 201개 품목 바로 검색 (예: 흙깎기, 관로, 백호 0.6, 레미콘, 아스콘 등)" oninput="handleSearch(this.value)">
+          <div id="search-dropdown" class="search-results-dropdown"></div>
+        </div>
+      </div>
+
+      <!-- 물량 추가 및 소요 공기 산출 -->
+      <div class="panel">
+        <div class="panel-head row space-between">
+          <h3>물량 추가 및 소요 공기 산출</h3>
+          <span class="muted" style="font-size:12px;" id="catalog-count-badge">표준품셈 로딩 중...</span>
+        </div>
+
+        <div class="spec-detail-box" id="spec-info-box">
+          <div class="detail-title">
+            <span id="txt-selected-spec">선택된 표준 규격: <strong>-</strong></span>
+            <span id="txt-calc-result" style="color:#2563eb; font-weight:700;"></span>
+          </div>
+          <div class="detail-condition" id="txt-selected-condition">
+            • 품목을 선택하면 상세 토질 조건 및 산정 기준이 이곳에 표시됩니다.
+          </div>
+        </div>
+
+        <div class="calc-form-grid">
+          <div class="form-group">
+            <label>공종 대분류</label>
+            <select id="sel-category" onchange="onCategoryChange(this.value)">
+              <!-- JS 동적 로드 -->
+            </select>
+          </div>
+          
+          <div class="form-group">
+            <label>세부 품목 규격 (<span id="item-count-text">0</span>개)</label>
+            <select id="sel-item" onchange="onItemChange(this.value)">
+              <!-- JS 동적 로드 -->
+            </select>
+          </div>
+          
+          <div class="form-group">
+            <label>일일작업량</label>
+            <div class="unit-input-wrap">
+              <input type="number" id="inp-daily-rate" value="0" readonly>
+              <span class="unit-badge" id="badge-daily-unit">m³/일</span>
+            </div>
+          </div>
+          
+          <div class="form-group">
+            <label>총 물량</label>
+            <div class="unit-input-wrap">
+              <input type="number" id="inp-total-qty" placeholder="수량 입력" oninput="calculateDays()">
+              <span class="unit-badge" id="badge-total-unit">m³</span>
+            </div>
+          </div>
+          
+          <button class="btn btn-primary" style="height:38px; padding:0 18px;" onclick="addQuantityItem()">+ 공정표 연동 추가</button>
+        </div>
+      </div>
+
+      <!-- 현재 현장 물량 산정 내역 테이블 -->
+      <div class="panel">
+        <div class="panel-head row space-between">
+          <h3>현재 현장 물량 산정 내역</h3>
+          <a href="index.html" style="color:var(--primary); font-size:13px; font-weight:600; text-decoration:none;">간트차트 확인하러 가기 &rarr;</a>
+        </div>
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>공종 및 세부 품목</th>
+                <th class="num">일일 표준작업량</th>
+                <th class="num">총 물량</th>
+                <th class="num">산정 작업일수</th>
+                <th>작업 예정 구간</th>
+                <th style="text-align:center;">관리</th>
+              </tr>
+            </thead>
+            <tbody id="tbl-quantities"></tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script src="js/db.js"></script>
+<script src="js/seed.js"></script>
+<script src="js/sw-catalog.js"></script>
+<script src="js/util.js"></script>
+<script src="js/calc.js"></script>
+<script src="js/nav.js"></script>
+<script>
+let catalogList = [];
+let currentProjectId = "";
+
+document.addEventListener('DOMContentLoaded', () => {
+  if (typeof renderSidebar === 'function') renderSidebar();
+  if (typeof renderTopbar === 'function') renderTopbar('공사 물량·생산성 산정');
+
+  loadCatalogData();
+  initProjectSelector();
+  initCategoryDropdown();
+});
+
+// sw-catalog.js 원본 완벽 로드
+function loadCatalogData() {
+  const raw = (typeof SW_CATALOG !== 'undefined') ? SW_CATALOG : [];
+
+  catalogList = raw.map((item, idx) => {
+    const cleanCondition = (item.condition || '').replace(/\\n/g, '\n').trim();
+    const cleanBasis = (item.basis || '').replace(/\\n/g, '\n').trim();
+
+    return {
+      id: item.id || `swc-${idx}`,
+      category: (item.category || '토공사').trim(),
+      name: item.name.trim(),
+      rate: Number(item.amount || item.rate || 0),
+      unit: (item.unit || 'm³').trim(),
+      condition: cleanCondition,
+      basis: cleanBasis
+    };
+  });
+
+  const badge = document.getElementById('catalog-count-badge');
+  if (badge) {
+    badge.textContent = `표준품셈 총 ${catalogList.length.toLocaleString()}개 품목 로드됨`;
+  }
+}
+
+// 상단 실시간 검색 기능
+function handleSearch(keyword) {
+  const dropdown = document.getElementById('search-dropdown');
+  const kw = keyword.trim().toLowerCase();
+
+  if (!kw) {
+    dropdown.style.display = 'none';
+    return;
+  }
+
+  const results = catalogList.filter(item => 
+    item.name.toLowerCase().includes(kw) ||
+    item.category.toLowerCase().includes(kw) ||
+    item.condition.toLowerCase().includes(kw)
+  ).slice(0, 15);
+
+  if (!results.length) {
+    dropdown.innerHTML = '<div style="padding:14px; color:#94a3b8; font-size:13px; text-align:center;">검색된 표준품셈 품목이 없습니다.</div>';
+    dropdown.style.display = 'block';
+    return;
+  }
+
+  dropdown.innerHTML = results.map(item => `
+    <div class="search-item" onclick="selectFromSearch('${item.id}')">
+      <div>
+        <div class="title"><span class="badge" style="background:#f1f5f9; color:#475569; margin-right:4px;">${item.category}</span> ${item.name}</div>
+        <div class="sub">${item.condition.split('\n')[0].substring(0, 45)}...</div>
+      </div>
+      <div style="font-size:13px; font-weight:700; color:#2563eb; white-space:nowrap; margin-left:12px;">
+        ${item.rate} ${item.unit}/일
+      </div>
+    </div>
+  `).join('');
+
+  dropdown.style.display = 'block';
+}
+
+function selectFromSearch(itemId) {
+  const target = catalogList.find(c => c.id === itemId);
+  if (!target) return;
+
+  document.getElementById('catalog-search').value = target.name;
+  document.getElementById('search-dropdown').style.display = 'none';
+
+  const catSel = document.getElementById('sel-category');
+  catSel.value = target.category;
+  onCategoryChange(target.category, target.id);
+}
+
+document.addEventListener('click', (e) => {
+  const searchWrap = document.querySelector('.search-input-wrap');
+  if (searchWrap && !searchWrap.contains(e.target)) {
+    document.getElementById('search-dropdown').style.display = 'none';
+  }
+});
+
+function initProjectSelector() {
+  const db = loadDB();
+  const sel = document.getElementById('sel-current-project');
+  if (!db.projects || !db.projects.length) {
+    sel.innerHTML = '<option value="">등록된 현장 없음</option>';
+    return;
+  }
+
+  sel.innerHTML = db.projects.map((p, idx) => `
+    <option value="${p.id}" ${idx === 0 ? 'selected' : ''}>${p.name}</option>
+  `).join('');
+
+  currentProjectId = sel.value;
+  renderQuantityList();
+}
+
+function switchProject(pid) {
+  currentProjectId = pid;
+  renderQuantityList();
+}
+
+function initCategoryDropdown() {
+  const catSel = document.getElementById('sel-category');
+  if (!catalogList.length) return;
+
+  const categories = [...new Set(catalogList.map(c => c.category))];
+  catSel.innerHTML = categories.map(c => `<option value="${c}">${c}</option>`).join('');
+
+  catSel.value = categories.includes('토공사') ? '토공사' : categories[0];
+  onCategoryChange(catSel.value);
+}
+
+function onCategoryChange(cat, targetItemId = null) {
+  const itemSel = document.getElementById('sel-item');
+  const countSpan = document.getElementById('item-count-text');
+  const filtered = catalogList.filter(c => c.category === cat);
+
+  if (countSpan) countSpan.textContent = filtered.length;
+
+  itemSel.innerHTML = filtered.map(item => {
+    const condBrief = item.condition ? ` (${item.condition.split('\n')[0].replace(/^[•\s\.\-]+/, '')})` : '';
+    return `<option value="${item.id}" title="${item.name}&#10;${item.condition}">${item.name}${condBrief}</option>`;
+  }).join('');
+
+  if (filtered.length > 0) {
+    const selectedId = targetItemId || filtered[0].id;
+    itemSel.value = selectedId;
+    onItemChange(selectedId);
+  }
+}
+
+function onItemChange(itemId) {
+  const target = catalogList.find(c => c.id === itemId);
+  if (!target) return;
+
+  document.getElementById('inp-daily-rate').value = target.rate;
+  document.getElementById('badge-daily-unit').textContent = `${target.unit}/일`;
+  document.getElementById('badge-total-unit').textContent = target.unit;
+
+  document.getElementById('txt-selected-spec').innerHTML = `
+    선택된 표준 규격: <strong>[${target.name}]</strong> (일일 표준작업량: <strong>${target.rate} ${target.unit}/일</strong>)
+  `;
+
+  let conditionHtml = '';
+  if (target.condition) conditionHtml += `<strong>[작업 조건]</strong><br>${target.condition}<br>`;
+  if (target.basis) conditionHtml += `<strong style="margin-top:4px; display:inline-block;">[산출 근거 / 투입 장비·인력]</strong><br>${target.basis}`;
+  document.getElementById('txt-selected-condition').innerHTML = conditionHtml || '상세 작업 조건 정보가 없습니다.';
+
+  calculateDays();
+}
+
+function calculateDays() {
+  const rate = parseFloat(document.getElementById('inp-daily-rate').value) || 0;
+  const qty = parseFloat(document.getElementById('inp-total-qty').value) || 0;
+  const itemId = document.getElementById('sel-item').value;
+  const target = catalogList.find(c => c.id === itemId);
+  const unit = target ? target.unit : 'm³';
+  const resultSpan = document.getElementById('txt-calc-result');
+
+  if (rate > 0 && qty > 0) {
+    const days = Math.ceil(qty / rate);
+    resultSpan.innerHTML = `총 물량: ${qty.toLocaleString()} ${unit} &rarr; 산정 소요공기: <strong>${days}일</strong>`;
+  } else {
+    resultSpan.innerHTML = '';
+  }
+}
+
+function addQuantityItem() {
+  const db = loadDB();
+  const itemId = document.getElementById('sel-item').value;
+  const target = catalogList.find(c => c.id === itemId);
+  const rate = parseFloat(document.getElementById('inp-daily-rate').value) || 0;
+  const qty = parseFloat(document.getElementById('inp-total-qty').value) || 0;
+
+  if (!currentProjectId) {
+    alert('작업을 등록할 현장을 먼저 선택하세요.');
+    return;
+  }
+  if (!qty || qty <= 0) {
+    alert('총 물량을 0보다 크게 입력해 주세요.');
+    return;
+  }
+
+  const days = Math.ceil(qty / rate);
+  const name = target ? target.name : '표준품셈 작업';
+  const unit = target ? target.unit : 'm³';
+  const category = target ? target.category : '토공사';
+
+  const newItem = {
+    id: 'Q_' + Date.now(),
+    projectId: currentProjectId,
+    category: category,
+    name: name,
+    dailyRate: rate,
+    quantity: qty,
+    unit: unit,
+    workDays: days,
+    period: `배정 예정 (${days}일간)`
+  };
+
+  if (!db.quantities) db.quantities = [];
+  db.quantities.push(newItem);
+  saveDB(db);
+
+  document.getElementById('inp-total-qty').value = '';
+  document.getElementById('txt-calc-result').innerHTML = '';
+  renderQuantityList();
+  alert(`'${name}' (${qty.toLocaleString()} ${unit}) 등록 완료!\n소요 작업일수: ${days}일`);
+}
+
+function renderQuantityList() {
+  const db = loadDB();
+  const tbody = document.getElementById('tbl-quantities');
+  const list = (db.quantities || []).filter(q => q.projectId === currentProjectId);
+
+  if (!list.length) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="6" style="text-align:center; padding:30px; color:#94a3b8;">
+          현재 선택된 현장에 등록된 물량 산정 내역이 없습니다.
+        </td>
+      </tr>
+    `;
+    return;
+  }
+
+  tbody.innerHTML = list.map(q => `
+    <tr>
+      <td>
+        <span class="badge" style="background:#f1f5f9; color:#475569; margin-right:6px;">${q.category}</span>
+        <strong>${q.name}</strong>
+      </td>
+      <td class="num mono">${q.dailyRate} ${q.unit}/일</td>
+      <td class="num mono font-bold">${Number(q.quantity).toLocaleString()} ${q.unit}</td>
+      <td class="num mono" style="color:var(--primary); font-weight:700;">${q.workDays} 일</td>
+      <td class="muted" style="font-size:12.5px;">${q.period || '-'}</td>
+      <td style="text-align:center;">
+        <button class="btn btn-sm" style="color:#ef4444; border-color:#fca5a5; padding:2px 8px; font-size:12px;" onclick="deleteQuantityItem('${q.id}')">삭제</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function deleteQuantityItem(id) {
+  if (!confirm('해당 물량 산정 내역을 삭제하시겠습니까?')) return;
+  const db = loadDB();
+  db.quantities = (db.quantities || []).filter(q => q.id !== id);
+  saveDB(db);
+  renderQuantityList();
+}
+</script>
+</body>
+</html>
